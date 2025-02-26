@@ -1,4 +1,4 @@
-FROM python:3.10-slim
+FROM nvidia/cuda:12.0.1-cudnn8-runtime-ubuntu22.04
 
 WORKDIR /app
 
@@ -6,6 +6,11 @@ WORKDIR /app
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     build-essential \
+    python3.10 \
+    python3.10-dev \
+    python3-pip \
+    python3-setuptools \
+    python3-wheel \
     libgl1-mesa-glx \
     libglib2.0-0 \
     libsm6 \
@@ -14,6 +19,11 @@ RUN apt-get update && \
     git \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
+
+# Set Python 3.10 as default
+RUN ln -sf /usr/bin/python3.10 /usr/bin/python3 && \
+    ln -sf /usr/bin/python3 /usr/bin/python && \
+    ln -sf /usr/bin/pip3 /usr/bin/pip
 
 # Copy requirements and install dependencies
 COPY requirements.txt .
@@ -26,8 +36,12 @@ COPY . .
 # Create directories
 RUN mkdir -p /app/uploads /app/results
 
-# Download models in advance
-RUN python -c "from marker.models import create_model_dict; create_model_dict()"
+# Set environment variables for GPU
+ENV NVIDIA_VISIBLE_DEVICES=all
+ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility
 
-# Command to run the API
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "${PORT:-8000}"]
+# Expose port
+EXPOSE 8080
+
+# Run the application
+CMD ["python", "main.py"]

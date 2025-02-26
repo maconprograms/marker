@@ -1,0 +1,11 @@
+{
+  "output_format": "json",
+  "use_llm": true,
+  "force_ocr": false,
+  "llm_service": {
+    "type": "vertex",
+    "vertex_project_id": "icculus",
+    "vertex_location": "us-east1",
+    "gemini_model_name": "gemini-1.5-flash-002"
+  }
+}

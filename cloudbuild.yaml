@@ -1,0 +1,64 @@
+steps:
+# Build the container image
+- name: 'gcr.io/cloud-builders/docker'
+  args: ['build', '-t', 'us-east1-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/marker-gpu-api:latest', '-f', 'Dockerfile.gpu', '.']
+
+# Push the container image to Container Registry
+- name: 'gcr.io/cloud-builders/docker'
+  args: ['push', 'us-east1-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/marker-gpu-api:latest']
+
+# Create a Compute Engine instance with GPU
+- name: 'gcr.io/cloud-builders/gcloud'
+  entrypoint: 'bash'
+  args:
+  - '-c'
+  - |
+    gcloud compute instances create marker-gpu-instance \
+      --project=$PROJECT_ID \
+      --zone=us-east1-b \
+      --machine-type=n1-standard-4 \
+      --network-interface=network-tier=PREMIUM,subnet=default \
+      --maintenance-policy=TERMINATE \
+      --provisioning-model=STANDARD \
+      --service-account=795058584669-compute@developer.gserviceaccount.com \
+      --scopes=https://www.googleapis.com/auth/cloud-platform \
+      --accelerator=count=1,type=nvidia-tesla-t4 \
+      --tags=http-server,https-server \
+      --create-disk=auto-delete=yes,boot=yes,device-name=marker-gpu-instance,image=projects/cos-cloud/global/images/cos-stable-109-17800-147-15,mode=rw,size=50,type=pd-balanced \
+      --no-shielded-secure-boot \
+      --shielded-vtpm \
+      --shielded-integrity-monitoring \
+      --reservation-affinity=any \
+      --metadata=startup-script="#! /bin/bash
+    # Install NVIDIA drivers
+    cos-extensions install gpu
+    mount -o remount,exec /var/lib/nvidia
+    /var/lib/nvidia/bin/nvidia-smi
+
+    # Pull and run the marker-api container
+    docker pull us-east1-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/marker-gpu-api:latest
+    docker run -d --gpus all -p 80:8080 \
+      -e PORT=8080 \
+      -e GOOGLE_CLOUD_PROJECT=$PROJECT_ID \
+      us-east1-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/marker-gpu-api:latest
+    "
+
+# Create firewall rule to allow HTTP traffic
+- name: 'gcr.io/cloud-builders/gcloud'
+  entrypoint: 'bash'
+  args:
+  - '-c'
+  - |
+    gcloud compute firewall-rules create allow-http \
+      --direction=INGRESS \
+      --priority=1000 \
+      --network=default \
+      --action=ALLOW \
+      --rules=tcp:80 \
+      --source-ranges=0.0.0.0/0 \
+      --target-tags=http-server || echo "Firewall rule already exists"
+
+# No substitutions needed as we're using PROJECT_ID directly
+
+options:
+  logging: CLOUD_LOGGING_ONLY
